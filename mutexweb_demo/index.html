@@ -2,27 +2,158 @@
   <body>
     <!-- <script src="https://cdn.jsdelivr.net/npm/onnxjs/dist/onnx.min.js"></script> -->
     <script src="onnxjs/dist/onnx.min.js"></script>
+    <script type="text/javascript" src="mws.js"></script>
+
+
+    <canvas id="raw_canvas" width="256" height="256"></canvas>
+    <canvas id="aff_canvas" width="256" height="256"></canvas>
+    <canvas id="seg_canvas" width="256" height="256"></canvas>
 
     <script>
-      async function test() {
+
+    var raw_canvas = document.getElementById('raw_canvas'),
+    raw_ctx = raw_canvas.getContext('2d');
+
+    var aff_canvas = document.getElementById('aff_canvas'),
+    aff_ctx = aff_canvas.getContext('2d');
+
+    var seg_canvas = document.getElementById('seg_canvas'),
+    seg_ctx = seg_canvas.getContext('2d');
+
+
+    function load_input_to_canvas()
+    {
+      base_image = new Image();
+      // base_image.src = 'img/isbi.png';
+      base_image.src = 'img/isbi.png';
+      base_image.onload = function(){
+        raw_ctx.drawImage(base_image, 0, 0);
+      }
+      return base_image
+    }
+
+    function read_input_array_from_canvas()
+    {
+      var data = raw_canvas.getContext('2d').getImageData(0, 0, 256, 256).data;
+      var input = new Float32Array(1 * 1 * 256 * 256)
+      // 
+      for (var i = 0; i < input.length; i += 1) {
+        input[i] = data[i] / 255;
+      } 
+      return input
+    }
+
+    async function compute_mws_segmentation(network_input)
+    {
+        // <!-- compute affinities with pretrained onnx model -->
         console.log(`backend: ${Object.keys(onnx.backend)}`)
         const sess = new onnx.InferenceSession()
         await sess.loadModel('./onnx_model.onnx')
-        const input = new onnx.Tensor(new Float32Array(1 * 1 * 256 * 256), 'float32', [1, 1, 256, 256])
+        const input = new onnx.Tensor(network_input, 'float32', [1, 1, 256, 256])
         const outputMap = await sess.run([input])
         const outputTensor = outputMap.values().next().value
 
         console.log(`Output tensor: ${outputTensor.data}`)
         console.log(`Output tensor: ${outputTensor.size}`)
         console.log(`Output tensor: ${outputTensor.dims}`)
+
+        const num_channels = outputTensor.dims[1]
+        const num_pixels = outputTensor.dims[2] * outputTensor.dims[2]
+        var max_per_channel = new Float32Array(num_channels)
+        var min_per_channel = new Float32Array(num_channels)
+        // var maxx = -1000.
+        // var minx = 1000.
+
+        for (var c = 0; c < outputTensor.dims[1]; c += 1) {
+          // set to extreme values that will be overwritten in the first iteration
+          // ideal would be inf and -inf
+          max_per_channel[c] = -1000.;
+          min_per_channel[c] = 1000.;
+
+          for (var i = 0; i < num_pixels; i += 1) {
+            if (max_per_channel[c] < outputTensor.data[c*num_pixels+i]){
+              max_per_channel[c] = outputTensor.data[c*num_pixels+i]
+            }
+            if (min_per_channel[c] > outputTensor.data[c*num_pixels+i]){
+              min_per_channel[c] = outputTensor.data[c*num_pixels+i]
+            }
+          }
+        }
+        console.log(`Output maxx: ${max_per_channel}`)
+        console.log(`Output minx: ${min_per_channel}`)
         console.log(`Output keys: ${Object.keys(input)}`)
-      }
-      test()
+
+
+        // <!-- visualize affinities in aff_canvas -->
+        var imgData = aff_ctx.createImageData(outputTensor.dims[2], outputTensor.dims[3]);
+
+        for (var i = 0; i < num_channels * num_pixels; i += 4) {
+          const array_idx = Math.floor(i/4)
+          imgData.data[i] = 255*(outputTensor.data[array_idx + 0 * num_pixels] - min_per_channel[0]) / (max_per_channel[0] - min_per_channel[0]);
+          imgData.data[i+1] = 255*(outputTensor.data[array_idx + 1 * num_pixels] - min_per_channel[1]) / (max_per_channel[1] - min_per_channel[1]);
+          imgData.data[i+2] = 255*(outputTensor.data[array_idx + 2 * num_pixels] - min_per_channel[2]) / (max_per_channel[2] - min_per_channel[2]);
+          imgData.data[i+3] = 255;
+        }
+        console.log(`imgData.data.length`, imgData.data.length)
+        aff_ctx.putImageData(imgData, 0, 0);
+
+        // NOTE: I only managed to communicate between WASM and js via wrapped std::vectors
+        // to make this efficient we need a way to set the vector buffer to a js Float32Array (should be possible)
+        // create test weights
+        var weights = Module.create_float_vector(num_channels * num_pixels, true)
+
+        for (var i = 0; i < num_channels * num_pixels; i += 1) {
+          weights[i] = outputTensor.data[i]
+        }
+
+        // <!-- run mws on affinities -->
+
+        const n_chans = 4;
+        var offsets = Module.create_int_vector(n_chans * 2)
+
+        // TODO I am not sure if access via [] is safe here
+        // maybe need to use push_back
+        offsets[0] = -1;
+        offsets[1] = 0;
+        offsets[2] = 0;
+        offsets[3] = -1;
+
+        offsets[4] = -3;
+        offsets[5] = 0;
+        offsets[6] = 0;
+        offsets[7] = -3;
+
+
+        var labels = Module.mutex_watershed_2d(weights,
+                                              offsets,
+                                              n_chans, 
+                                              outputTensor.dims[2],
+                                              outputTensor.dims[3])
+
+        // <!-- visualize segmentation in seg_canvas -->
+        console.log(`writing label image:`)
+        var segData = seg_ctx.createImageData(outputTensor.dims[2], outputTensor.dims[3]);
+
+        for (var i = 0; i < 4 * num_pixels; i += 4) {
+          const label_idx = labels.get(Math.floor(i/4));
+          segData.data[i] = label_idx % 256;
+          segData.data[i+1] = (3 * label_idx) % 256;
+          segData.data[i+2] = (5 * label_idx) % 256;
+          segData.data[i+3] = 255;
+        }
+        seg_ctx.putImageData(segData, 0, 0);
+    }
+
+    raw_canvas.addEventListener('click', function(event) {
+      input = read_input_array_from_canvas();
+      console.log("img", input);
+      compute_mws_segmentation(input)
+    });
+
+    // <!-- read image data and display it in raw_canvas -->
+    raw_image = load_input_to_canvas();
+
     </script>
-    <p>
-      The output of this debug demo is logged to the JavaScript
-      console. To view the output, open your browser's developer
-      tools window, and look under the "Console" tab.
-    </p>
+
   </body>
 </html>

@@ -35,7 +35,7 @@ class Simplemodel(torch.nn.Module):
 
 def main():
 
-    pytorch_model = UNet2dTC(1, 1, pad_convs=True, depth=1)
+    pytorch_model = UNet2dTC(1, 4, pad_convs=True, depth=1)
     # load pretrained weights
     # pytorch_model.load_state_dict(torch.load('model.pytorch'))
     pytorch_model.eval()
