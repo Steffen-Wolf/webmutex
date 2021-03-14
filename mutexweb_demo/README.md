@@ -1,6 +1,6 @@
 # Building the Onnx version that we need
 
-We need a specific version of onnx that is compatible with all of our network components (e.g. 2d average pooling). First, cd into the. Build this onnx repo (branch resize):
+We need a specific version of onnx that is compatible with all of our network components (e.g. 2d average pooling). Build this onnx repo (branch resize):
 https://github.com/fs-eire/onnxjs/tree/resize
 Build Onnx and copy the complete onnxjs folder into the webmutex/mutexweb_demo directory.
 
