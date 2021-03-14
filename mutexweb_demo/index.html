@@ -101,63 +101,64 @@
         // to make this efficient we need a way to set the vector buffer to a js Float32Array (should be possible)
 
         // create test weights
-        var weights = Module.create_float_vector(num_channels * num_pixels, true)
+        var weights = Module.create_float_vector(num_channels * num_pixels);
 
+        var weight_id = 0;
         for (var c = 0; c < num_channels; c += 1) {
-          for (var i = 0; i <  num_pixels; i += 1) {
+          for (var i = 0; i < num_pixels; i += 1) {
             if (c < 2){
-              weights[i] = 1.//outputTensor.data[i + (c * num_pixels)]
+              weights.set(weight_id, outputTensor.data[i + (c * num_pixels)]);
             }
             else{
-              weights[i] = 1 - outputTensor.data[i + (c * num_pixels)]
+              weights.set(weight_id, 1 - outputTensor.data[i + (c * num_pixels)]);
             }
+            weight_id += 1
           }
         }
 
         // <!-- run mws on affinities -->
-        var offsets = Module.create_int_vector(num_channels * 2)
+        var offsets = Module.create_int_vector(num_channels * 2);
 
         // TODO I am not sure if access via [] is safe here
         // maybe need to use push_back
 
-        offsets[0] = -1
-        offsets[1] = 0
-        offsets[2] = 0
-        offsets[3] = -1
-        offsets[4] = -3
-        offsets[5] = 0
-        offsets[6] = 0
-        offsets[7] = -3
-        offsets[8] = -2
-        offsets[9] = -9
-        offsets[10] = -5
-        offsets[11] = -7
-        offsets[12] = -7
-        offsets[13] = -5
-        offsets[14] = -9
-        offsets[15] = -2
-        offsets[16] = -9
-        offsets[17] = 2
-        offsets[18] = -7
-        offsets[19] = 5
-        offsets[20] = -5
-        offsets[21] = 7
-        offsets[22] = -2
-        offsets[23] = 9
-        offsets[24] = -27
-        offsets[25] = 0
-        offsets[26] = 0
-        offsets[27] = -27
+        offsets.set(0, -1);
+        offsets.set(1, 0);
+        offsets.set(2, 0);
+        offsets.set(3, -1);
+        offsets.set(4, -3);
+        offsets.set(5, 0);
+        offsets.set(6, 0);
+        offsets.set(7, -3);
+        offsets.set(8, -2);
+        offsets.set(9, -9);
+        offsets.set(10, -5);
+        offsets.set(11, -7);
+        offsets.set(12, -7);
+        offsets.set(13, -5);
+        offsets.set(14, -9);
+        offsets.set(15, -2);
+        offsets.set(16, -9);
+        offsets.set(17, 2);
+        offsets.set(18, -7);
+        offsets.set(19, 5);
+        offsets.set(20, -5);
+        offsets.set(21, 7);
+        offsets.set(22, -2);
+        offsets.set(23, 9);
+        offsets.set(24, -27);
+        offsets.set(25, 0);
+        offsets.set(26, 0);
+        offsets.set(27, -27);
 
 
         var labels = Module.mutex_watershed_2d(weights,
-                                              offsets,
-                                              num_channels, 
-                                              outputTensor.dims[2],
-                                              outputTensor.dims[3])
+                                               offsets,
+                                               outputTensor.dims[2],
+                                               outputTensor.dims[3]);
 
         // <!-- visualize segmentation in seg_canvas -->
-        console.log(`writing label image:`, labels)
+        console.log(`writing label image:`, labels);
         var segData = seg_ctx.createImageData(outputTensor.dims[2], outputTensor.dims[3]);
 
         for (var i = 0; i < 4 * num_pixels; i += 4) {
