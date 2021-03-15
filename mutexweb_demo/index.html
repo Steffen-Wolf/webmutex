@@ -120,8 +120,6 @@
         // <!-- run mws on affinities -->
         var offsets = Module.create_int_vector(num_channels * 2);
 
-        // TODO I am not sure if access via [] is safe here
-        // maybe need to use push_back
         offsets.set(0, -1);
         offsets.set(1, 0);
         offsets.set(2, 0);
@@ -151,10 +149,16 @@
         offsets.set(26, 0);
         offsets.set(27, -27);
 
+        var strides = Module.create_int_vector(2);
+        strides.set(0, 4);
+        strides.set(1, 4);
+
         var labels = Module.mutex_watershed_2d(weights,
                                                offsets,
+                                               strides,
                                                outputTensor.dims[2],
-                                               outputTensor.dims[3]);
+                                               outputTensor.dims[3],
+                                               true);
 
         // <!-- visualize segmentation in seg_canvas -->
         console.log(`writing label image:`, labels);
