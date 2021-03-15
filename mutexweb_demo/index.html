@@ -37,8 +37,9 @@
       var data = raw_canvas.getContext('2d').getImageData(0, 0, 256, 256).data;
       var input = new Float32Array(1 * 1 * 256 * 256)
       // 
-      for (var i = 0; i < input.length; i += 1) {
-        input[i] = data[i] / 255;
+      for (var i = 0; i < 4*input.length; i += 4) {
+        const array_idx = Math.floor(i / 4)
+        input[array_idx] = data[i] / 255;
       } 
       return input
     }
