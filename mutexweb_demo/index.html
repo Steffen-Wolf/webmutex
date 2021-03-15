@@ -107,10 +107,10 @@
         for (var c = 0; c < num_channels; c += 1) {
           for (var i = 0; i < num_pixels; i += 1) {
             if (c < 2){
-              weights.set(weight_id, outputTensor.data[i + (c * num_pixels)]);
+              weights.set(weight_id, 1 - outputTensor.data[i + (c * num_pixels)]);
             }
             else{
-              weights.set(weight_id, 1 - outputTensor.data[i + (c * num_pixels)]);
+              weights.set(weight_id, outputTensor.data[i + (c * num_pixels)]);
             }
             weight_id += 1
           }
@@ -121,7 +121,6 @@
 
         // TODO I am not sure if access via [] is safe here
         // maybe need to use push_back
-
         offsets.set(0, -1);
         offsets.set(1, 0);
         offsets.set(2, 0);
@@ -150,7 +149,6 @@
         offsets.set(25, 0);
         offsets.set(26, 0);
         offsets.set(27, -27);
-
 
         var labels = Module.mutex_watershed_2d(weights,
                                                offsets,
