@@ -58,7 +58,7 @@ async function readImage(url){
 
 class ImJoyPlugin {
     async setup() {
-        this.mws = await api.getPlugin("https://raw.githubusercontent.com/oeway/webmutex/master/docs/mws.imjoy.html") 
+        this.mws = await api.getPlugin("https://raw.githubusercontent.com/Steffen-Wolf/webmutex/master/docs/mws.imjoy.html") 
     }
 
     async run(ctx) {
@@ -78,7 +78,7 @@ class ImJoyPlugin {
                         "type": "button",
                         "label": "Run",
                         async callback(){
-                            const inputImageURL = await api.prompt("Please paste an input image URL", 'https://oeway.github.io/webmutex/img/isbi.png')
+                            const inputImageURL = await api.prompt("Please paste an input image URL", 'https://steffenwolf.science/webmutex/img/isbi.png')
                             if(!inputImageURL) return;
                             const inputImage = await readImage(inputImageURL)
                             await viewer.view_image({
@@ -87,7 +87,7 @@ class ImJoyPlugin {
                                 _rshape: [256, 256],
                                 _rdtype: 'float32'
                             }, {name: 'Input image'})
-                            const results = await self.mws.predict('https://oeway.github.io/webmutex/model.onnx', inputImage)
+                            const results = await self.mws.predict('https://steffenwolf.science/webmutex/model.onnx', inputImage)
              
                             await viewer.view_image({
                                 _rtype: "ndarray",
