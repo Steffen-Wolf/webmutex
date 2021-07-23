@@ -1,0 +1,113 @@
+<docs>
+[TODO: write documentation for this plugin.]
+</docs>
+
+<config lang="json">
+{
+  "name": "Run MWS",
+  "type": "web-worker",
+  "tags": [],
+  "ui": "",
+  "version": "0.1.0",
+  "cover": "",
+  "description": "[TODO: describe this plugin with one sentence.]",
+  "icon": "extension",
+  "inputs": null,
+  "outputs": null,
+  "api_version": "0.1.8",
+  "env": "",
+  "permissions": [],
+  "requirements": [],
+  "dependencies": []
+}
+</config>
+
+<script lang="javascript">
+
+function loadImage(url) {
+  return new Promise(async (resolve,reject)=>{
+    const blob = await fetch(url).then(r => r.blob());
+    const img = await createImageBitmap(blob);
+    var offscreen = new OffscreenCanvas(img.height, img.width);
+    var ctx = offscreen.getContext('2d'); 
+    ctx.drawImage(img,0,0);
+    resolve(offscreen)
+  })
+}
+
+async function getDataURL(canvas) {
+  const blob = await canvas[
+    canvas.convertToBlob 
+      ? 'convertToBlob' // specs
+      : 'toBlob'        // current Firefox
+   ]()
+   return new FileReaderSync().readAsDataURL(blob);
+}
+
+async function readImage(url){
+    const canvas = await loadImage(url);
+    const data = canvas.getContext('2d').getImageData(0, 0, 256, 256).data;
+    const input = new Float32Array(1 * 1 * 256 * 256)
+      // 
+    for (let i = 0; i < 4*input.length; i += 4) {
+        const array_idx = Math.floor(i / 4)
+        input[array_idx] = data[i] / 255;
+    } 
+    return input
+}
+
+class ImJoyPlugin {
+    async setup() {
+        this.mws = await api.getPlugin("https://raw.githubusercontent.com/Steffen-Wolf/webmutex/master/docs/mws.imjoy.html") 
+    }
+
+    async run(ctx) {
+        const self = this;
+        // const mode = ctx.config.mode // 'one' means for a model; 'all' means standalone mode
+        // const modelInfo = ctx.data
+        // const source = modelInfo.source; // an url to the model
+        const viewer = await api.createWindow({src: "https://kaibu.org/#/app", name: "Kaibu"})
+        // await viewer.view_image(inputImageURL)
+        await viewer.add_widget(
+            {
+                "_rintf": true,
+                "name": "Control",
+                "type": "control",
+                "elements": [
+                    {
+                        "type": "button",
+                        "label": "Run",
+                        async callback(){
+                            const inputImageURL = await api.prompt("Please paste an input image URL", 'https://steffenwolf.science/webmutex/img/isbi.png')
+                            if(!inputImageURL) return;
+                            const inputImage = await readImage(inputImageURL)
+                            await viewer.view_image({
+                                _rtype: "ndarray",
+                                _rvalue: inputImage.buffer,
+                                _rshape: [256, 256],
+                                _rdtype: 'float32'
+                            }, {name: 'Input image'})
+                            const results = await self.mws.predict('https://steffenwolf.science/webmutex/model.onnx', inputImage)
+             
+                            await viewer.view_image({
+                                _rtype: "ndarray",
+                                _rvalue: results.labels.buffer,
+                                _rshape: [256, 256, 3],
+                                _rdtype: 'uint8'
+                            }, {name: 'Labels'})
+                            await viewer.view_image({
+                                _rtype: "ndarray",
+                                _rvalue: results.affinities.buffer,
+                                _rshape: [28, 256, 256],
+                                _rdtype: 'float32'
+                            }, {name: 'Affinities'})
+                        },
+                    },
+                 
+                ],
+            })
+    
+    }
+}
+api.export(new ImJoyPlugin())
+</script>

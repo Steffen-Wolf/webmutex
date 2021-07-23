@@ -1,0 +1,177 @@
+<docs>
+[TODO: write documentation for this plugin.]
+</docs>
+
+<config lang="json">
+{
+  "name": "Mutex Watershed Segmentation",
+  "type": "iframe",
+  "tags": [],
+  "ui": "",
+  "version": "0.1.1",
+  "cover": "",
+  "description": "A plugin for Mutex Watershed Segmentation powered by onnx.js",
+  "icon": "extension",
+  "inputs": null,
+  "outputs": null,
+  "api_version": "0.1.8",
+  "env": "",
+  "permissions": [],
+  "requirements": ["https://steffenwolf.science/webmutex/onnx_compiled/onnx.min.js",
+                  "https://steffenwolf.science/webmutex/mws.js"],
+  "dependencies": []
+}
+</config>
+
+<script lang="javascript">
+async function compute_mws_segmentation(sess, network_input, input_shape)
+{
+    // <!-- compute affinities with pretrained onnx model -->
+    
+    const input = new onnx.Tensor(network_input, 'float32', input_shape)
+    const outputMap = await sess.run([input])
+    const outputTensor = outputMap.values().next().value
+
+    console.log(`Output tensor: ${outputTensor.data}`)
+    console.log(`Output tensor: ${outputTensor.size}`)
+    console.log(`Output tensor: ${outputTensor.dims}`)
+
+    const num_channels = outputTensor.dims[1]
+    const num_pixels = outputTensor.dims[2] * outputTensor.dims[2]
+    var max_per_channel = new Float32Array(num_channels)
+    var min_per_channel = new Float32Array(num_channels)
+    // var maxx = -1000.
+    // var minx = 1000.
+
+    for (var c = 0; c < outputTensor.dims[1]; c += 1) {
+      // set to extreme values that will be overwritten in the first iteration
+      // ideal would be inf and -inf
+      max_per_channel[c] = -1000.;
+      min_per_channel[c] = 1000.;
+
+      for (var i = 0; i < num_pixels; i += 1) {
+        if (max_per_channel[c] < outputTensor.data[c*num_pixels+i]){
+          max_per_channel[c] = outputTensor.data[c*num_pixels+i]
+        }
+        if (min_per_channel[c] > outputTensor.data[c*num_pixels+i]){
+          min_per_channel[c] = outputTensor.data[c*num_pixels+i]
+        }
+      }
+    }
+    console.log(`Output maxx: ${max_per_channel}`)
+    console.log(`Output minx: ${min_per_channel}`)
+    console.log(`Output keys: ${Object.keys(input)}`)
+
+
+//     // <!-- visualize affinities in aff_canvas -->
+//     var imgData = aff_ctx.createImageData(outputTensor.dims[2], outputTensor.dims[3]);
+
+//     for (var i = 0; i < num_channels * num_pixels; i += 4) {
+//       const array_idx = Math.floor(i/4)
+//       imgData.data[i] = 255*(outputTensor.data[array_idx + 2 * num_pixels] - min_per_channel[0]) / (max_per_channel[0] - min_per_channel[0]);
+//       imgData.data[i+1] = 255*(outputTensor.data[array_idx + 3 * num_pixels] - min_per_channel[1]) / (max_per_channel[1] - min_per_channel[1]);
+//       imgData.data[i+2] = 255*(outputTensor.data[array_idx + 4 * num_pixels] - min_per_channel[2]) / (max_per_channel[2] - min_per_channel[2]);
+//       imgData.data[i+3] = 255;
+//     }
+//     console.log(`imgData.data.length`, imgData.data.length)
+//     aff_ctx.putImageData(imgData, 0, 0);
+
+    // NOTE: I only managed to communicate between WASM and js via wrapped std::vectors
+    // to make this efficient we need a way to set the vector buffer to a js Float32Array (should be possible)
+
+    // create test weights
+    var weights = Module.create_float_vector(num_channels * num_pixels);
+
+    var weight_id = 0;
+    for (var c = 0; c < num_channels; c += 1) {
+      for (var i = 0; i < num_pixels; i += 1) {
+        if (c < 2){
+          weights.set(weight_id, 1 - outputTensor.data[i + (c * num_pixels)]);
+        }
+        else{
+          weights.set(weight_id, outputTensor.data[i + (c * num_pixels)]);
+        }
+        weight_id += 1
+      }
+    }
+
+    // <!-- run mws on affinities -->
+    var offsets = Module.create_int_vector(num_channels * 2);
+
+    offsets.set(0, -1);
+    offsets.set(1, 0);
+    offsets.set(2, 0);
+    offsets.set(3, -1);
+    offsets.set(4, -3);
+    offsets.set(5, 0);
+    offsets.set(6, 0);
+    offsets.set(7, -3);
+    offsets.set(8, -2);
+    offsets.set(9, -9);
+    offsets.set(10, -5);
+    offsets.set(11, -7);
+    offsets.set(12, -7);
+    offsets.set(13, -5);
+    offsets.set(14, -9);
+    offsets.set(15, -2);
+    offsets.set(16, -9);
+    offsets.set(17, 2);
+    offsets.set(18, -7);
+    offsets.set(19, 5);
+    offsets.set(20, -5);
+    offsets.set(21, 7);
+    offsets.set(22, -2);
+    offsets.set(23, 9);
+    offsets.set(24, -27);
+    offsets.set(25, 0);
+    offsets.set(26, 0);
+    offsets.set(27, -27);
+
+    var strides = Module.create_int_vector(2);
+    strides.set(0, 4);
+    strides.set(1, 4);
+
+    var labels = Module.mutex_watershed_2d(weights,
+                                           offsets,
+                                           strides,
+                                           outputTensor.dims[2],
+                                           outputTensor.dims[3],
+                                           true);
+
+    // <!-- visualize segmentation in seg_canvas -->
+    console.log(`writing label image:`, labels);
+    const buffer = new ArrayBuffer(3*outputTensor.dims[2]* outputTensor.dims[3])
+    var segData = new Uint8Array(buffer);
+
+    for (var i = 0; i < 3 * num_pixels; i += 3) {
+      const label_idx = labels.get(Math.floor(i/3));
+      // console.log(`labels:`, Math.floor(i/4), label_idx)
+      segData[i] = label_idx % 256;
+      segData[i+1] = (3 * label_idx) % 256;
+      segData[i+2] = (5 * label_idx) % 256;
+    }
+    return {labels: segData, affinities: outputTensor.data}
+}
+
+
+class ImJoyPlugin {
+  async setup() {
+    await api.log(`backend: ${Object.keys(onnx.backend)}`)
+    this.sess = null;
+    this.currentModelURL = null
+  }
+    
+  async predict(modelURL, image){
+    if(!this.sess || this.currentModelURL !== modelURL){
+        const sess = new onnx.InferenceSession()
+        await sess.loadModel(modelURL)
+        this.sess = sess;
+        this.currentModelURL = modelURL
+    }
+     // decode the image
+     return await compute_mws_segmentation(this.sess, image, [1, 1, 256, 256])
+  }
+}
+
+api.export(new ImJoyPlugin())
+</script>
